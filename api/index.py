@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 app.config["JSON_SORT_KEYS"] = False
 
-DATA_FILE = os.path.join(os.path.dirname(__file__), "data.json")
+DATA_FILE = "/tmp/data.json"
 
 DEFAULT_DATA = {
     "bathroom_map": {
@@ -93,12 +93,41 @@ def filter_usage_history(building: Optional[str] = None, bathroom_id: Optional[s
     return results
 
 
-@app.route("/api/buildings", methods=["GET"])
+@app.route("/buildings", methods=["GET"])
 def list_buildings():
     return jsonify({"buildings": list(bathroom_map.keys())})
 
 
-@app.route("/api/status", methods=["GET"])
+@app.route("/buildings", methods=["POST"])
+def create_building():
+    if not request.is_json:
+        abort(400, description="Request body must be JSON")
+
+    payload = request.get_json()
+    building_name = payload.get("name")
+    bathroom = payload.get("bathroom")
+
+    if not building_name:
+        abort(400, description="Request JSON must include 'name'")
+
+    found_building, _ = find_building(building_name)
+    if found_building:
+        abort(400, description=f"Building '{building_name}' already exists")
+
+    if bathroom:
+        bathroom_map[building_name] = [bathroom]
+    else:
+        bathroom_map[building_name] = []
+
+    save_data()
+    return jsonify({
+        "success": True,
+        "building": building_name,
+        "bathrooms": bathroom_map[building_name]
+    }), 201
+
+
+@app.route("/status", methods=["GET"])
 def get_status():
     buildings = []
     for building, bathrooms in bathroom_map.items():
@@ -109,7 +138,7 @@ def get_status():
     return jsonify({"buildings": buildings})
 
 
-@app.route("/api/bathrooms", methods=["GET"])
+@app.route("/bathrooms", methods=["GET"])
 def list_bathrooms():
     building = request.args.get("building")
     if building:
@@ -121,7 +150,7 @@ def list_bathrooms():
     return jsonify({"bathrooms": get_all_bathrooms()})
 
 
-@app.route("/api/bathrooms/<building>", methods=["GET"])
+@app.route("/bathrooms/<building>", methods=["GET"])
 def bathrooms_by_building(building):
     found_building, bathrooms = find_building(building)
     if bathrooms is None:
@@ -129,7 +158,7 @@ def bathrooms_by_building(building):
     return jsonify({"building": found_building, "bathrooms": bathrooms})
 
 
-@app.route("/api/usage", methods=["GET"])
+@app.route("/usage", methods=["GET"])
 def list_usage_history():
     building = request.args.get("building")
     bathroom_id = request.args.get("bathroom_id")
@@ -137,7 +166,7 @@ def list_usage_history():
     return jsonify({"usage_history": history})
 
 
-@app.route("/api/usage", methods=["POST"])
+@app.route("/usage", methods=["POST"])
 def log_usage_event():
     if not request.is_json:
         abort(400, description="Request body must be JSON")
@@ -168,7 +197,7 @@ def log_usage_event():
     return jsonify({"success": True, "entry": entry}), 201
 
 
-@app.route("/api/bathrooms", methods=["POST"])
+@app.route("/bathrooms", methods=["POST"])
 def add_bathroom():
     if not request.is_json:
         abort(400, description="Request body must be JSON")
